@@ -1,0 +1,147 @@
+---
+title: "How Much Did It Rain?  Part I"
+author: "Tyler Byers"
+date: "November 16, 2015"
+output: pdf_document
+---
+
+## About
+
+This is Part 1 of the final project for the University of Washington Professional and Continuing Education Data Science certificate class #3 of 3.  I chose the Kaggle competition "How Much Did it Rain" (https://www.kaggle.com/c/how-much-did-it-rain-ii).  This deliverable is mostly telling about the project and exploring the data a little bit.  I am working on this project alone -- no team members.
+
+## Problem Description and Summary
+
+This competition is to predict how much it rained in a given location based on radar readings.  Because the amount of rainfall can be highly localized to an area, and because it is impossible to put a rain gauge in every location, or even in a lot of different locations, calculating the amount of rainfall a certain location received can be important.  Since these data in particular are for midwestern corn-growing states, estimating the amount of rain a certain farm received can be important -- whether to check for crop damage, or to plan harvest, or perhaps do localized flooding mitigation.  If we can use radar to accurately calculate the rainfall in a given location, it may help the farmers with these problems.  This has applicability to more than just farms too.
+
+This is a supervised learning problem, because we have a target variable `Expected` amount of rain in mm in an hour.  We use the radar measurements to predict the target variable.  The evaluation metric is Mean Absolute Error (MAE) for the Kaggle competition. 
+
+As described below, the main thing that I'll have to do with the data when doing my prediction is to filter out bad values for `Expected` -- probably those values with readings above 350 mm in an hour.  As described on Kaggle, the gauges can often give faulty readings.  There will be a bit of work involved with all the NA data -- not sure what I'll do with that yet.  Choosing the correct algorithms will be non-trivial, and I'll have to really think hard about how to aggregate the data since there may be anywhere between one and nineteen radar observations in an hour. 
+
+## Set Environment
+
+First we need to set our environment to the proper working directory and load the needed R packages.
+
+```{r set_environment, message=FALSE}
+##-----Set working directory-----
+setwd('~/UW_DataScience/DataAtScale/final_project/')
+
+##-----Load Libraries-----
+library(dplyr); library(ggplot2); library(readr)
+```
+
+## Load Data, Perform EDA
+
+Now we'll load the data and explore it a bit.
+
+```{r load_data}
+#rain <- read.csv('./data/train.csv')  # was throwing an error when knitting/caching PDF
+rain <- readRDS('./data/rain.rds') # converted file to RDS to load here
+```
+
+```{r data_summary, cache = TRUE}
+dim(rain)
+str(rain)
+summary(rain)
+```
+
+I notice with the summary that a very high percentage of several of the variables are NA. So we're going to either have to choose a prediction algorithm that can handle NA values, or get rid of those values, or handle them some other way.  
+
+### Explore Target Variable
+
+One interesting thing about the data is that the target variable, `Expected` is repeated several times for each `Id`.  This is because there are several radar observations per hour per `Id` but only one `Expected` reading, which is the millimeters of rain in that observation hour.
+
+So, in order to see what our distribution of rain measurements actually looks like, we have to take just a single value per `Id`.  We are going to take the first value as well as the mean Expected value for each Id.  If they are not the same, then there is some problem with the data, because all the values per Id chunk should be identical.   
+
+```{r aggregate_expected, cache = TRUE}
+rain_1perhr <- rain %>%
+  group_by(Id) %>% 
+  summarise(Expected = first(Expected), Expected_avg = mean(Expected), n = n())
+```
+
+How many of the `Expected` values were different than the mean `Expected` per `Id` chunk?  
+
+```{r exploring_expected, cache=TRUE}
+sum(rain_1perhr$Expected != rain_1perhr$Expected_avg)
+```
+
+The sum is zero, so they were all the same, so there are no abnormalities with that data.
+
+How many radar observations in a given hour are we seeing?  By table:
+
+```{r table_observed_per_hr}
+table(rain_1perhr$n)
+```
+
+This is interesting -- there may be different ways of handling the 1-observation hour versus the 19-observation hours.  Maybe by level of certainty/uncertainty.  Not sure, will have to think about this.
+
+Now plot the Expected.
+
+```{r plot_expected_histogram, cache=TRUE}
+qplot(rain_1perhr$Expected)
+ggplot(rain_1perhr, aes(x = Id, y = Expected)) + geom_point()
+```
+
+That plot is extremely difficult to see.  I susupect there is a lot of bad data in this data set.  Let's zoom in a bit:
+
+```{r expected_zoom_in, cache=TRUE}
+ggplot(rain_1perhr %>% filter(Id < 10000), aes(x = Id, y = Expected)) + geom_point(alpha = 0.1) +
+  scale_y_continuous(limits  = c(0, 2000))
+```
+
+In fact, according to the Weather Channel, the highest 1-hour rainfall total in the USA, ever, was 13.8 inches in an hour (http://www.weather.com/holiday/spring/news/extreme-rainfall-records-united-states-20130313#/4).  This equates to 350 mm.  So, we can probably throw out rainfall values above 350mm, and consider them to be bad gauge data.
+
+```{r expected_zoom_in_under350, cache = TRUE}
+ggplot(rain_1perhr %>% filter(Id < 10000), aes(x = Id, y = Expected)) + geom_point(alpha = 0.1) + scale_y_continuous(limits  = c(0, 350))
+ggplot(rain_1perhr %>% filter(Expected < 350), aes(x = Expected)) + geom_histogram()
+ggplot(rain_1perhr %>% filter(Expected < 350), aes(x = Expected)) + geom_histogram() +
+  scale_x_log10()
+```
+
+When filtering to allow no values of `Expected` greater than 350, the scatterplot reveals, unsurprisingly, a skew-right pattern.  The second histogram above is a log-10 scale, which is closer to a normal type of distribution.  So, one way that we might be more successful at solving this problem is to treat expected as a log and then re-scale it for the final answer.  
+
+Just curious, how many values to we "screen out" when we filter to reasonable rain values?  Beyond screening out completely ridiculous values, it's hard to screen out bad values that lie within a reasonable range.
+
+```{r how_many_rows}
+nrow(rain_1perhr %>% filter(Expected < 350))
+nrow(rain_1perhr %>% filter(Expected < 350))/nrow(rain_1perhr)
+```
+
+So, at this leaves us with about 93.8% of our original data.
+
+###  Looking at Individual Variables
+
+Now I will, tediously, look at histograms for the remaining variables, to see if they look reasonable and maybe if we should think about applying transformations to the data when doing our predictions.
+
+First, need to filter out the "bad" rain gauge values.
+
+```{r filter_rain_lessthan350}
+rain_filtered <- rain %>% filter(Expected < 350)
+```
+
+Now, histograms for each variable remaining.  Mainly looking for outliers and distribution shapes.  Comments about the distribution shapes are included in-line.
+
+```{r hisograms, cache=TRUE, warning=FALSE}
+qplot(rain_filtered$radardist_km, binwidth = 1)  # normal-ish distribution, little skew left
+qplot(rain_filtered$Ref) # normal dist
+qplot(rain_filtered$Ref_5x5_10th) # normal dist
+qplot(rain_filtered$Ref_5x5_50th) # normal dist
+qplot(rain_filtered$Ref_5x5_90th) # normal dist
+qplot(rain_filtered$RefComposite) # normal dist
+qplot(rain_filtered$RefComposite_5x5_10th) # normal dist
+qplot(rain_filtered$RefComposite_5x5_50th) # normal dist
+qplot(rain_filtered$RefComposite_5x5_90th) # normal dist
+qplot(rain_filtered$RhoHV)  # very skew-left distribution
+qplot(rain_filtered$RhoHV_5x5_10th) # very skew-left distribution
+qplot(rain_filtered$RhoHV_5x5_50th) # very skew-left distribution
+qplot(rain_filtered$RhoHV_5x5_90th) # very very skew-left distribution
+qplot(rain_filtered$Zdr) # normal distr
+qplot(rain_filtered$Zdr_5x5_10th) # pretty normal dist, a bit skew-left
+qplot(rain_filtered$Zdr_5x5_50th)  # narrow normal distr
+qplot(rain_filtered$Zdr_5x5_90th)  # interesting right-end spike -- maybe bad values??
+qplot(rain_filtered$Kdp)  # very narrow distribution with long tails
+qplot(rain_filtered$Kdp_5x5_10th)  # left-skew distribution
+qplot(rain_filtered$Kdp_5x5_50th)  # left-skew, but narrow "center"
+qplot(rain_filtered$Kdp_5x5_90th)  # quite narrow dist, some very high/low values at either end though
+```
+
+So for the most part these distributions look normal and/or have some sort of skew to them.  I don't think I'll need to do a lot with these data, but with the skewed variables it might be good to do log-scale transformations.  I'll also need to think about interactions between variables. 
