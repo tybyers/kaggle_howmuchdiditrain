@@ -14,7 +14,8 @@ setwd('~/UW_DataScience/DataAtScale/final_project/')
 
 ##-----Load Libraries-----
 library(dplyr); library(randomForest); library(rpart);
-library(caret); library(ggplot2)
+library(caret); library(ggplot2); library(MESS); library(randomForest)
+library(gbm)
 
 ##-----Load Data Sets --------------
 train <- read.csv('./data/train.csv')
@@ -67,7 +68,7 @@ write_output <- function(id, pred) {
 }
 
 ## Going to do a baseline test using the mean rainfall for all observations
-mean_all <- mean(train_1perhr$Expected)  # mean of Expected with obs > 350 filtered
+mean_all <- mean((train_1perhr %>% filter(Expected < 350))$Expected)  # mean of Expected with obs > 350 filtered
 mae(train_1perhr$Expected[!is.na(train_1perhr$Ref_mean)], mean_all)
 # MAE: 11.77 -- hmm, doesn't seem right (later -- was with filtered Expected vals)
 #  With ugly bad Expeced vals, score is 27.2388, much more in line w/ Kaggle score.
@@ -266,6 +267,11 @@ run_mods <- function(data, allrefna, highExpected, fol, mod = 'rpart', k = 10) {
       rf <- randomForest(fol, data = train_filt)
       print(importance(rf))
       pred <- predict(rf, newdata = test)
+    } else if(mod == 'gbm') {
+      gbm_mod <- gbm(formula = fol, data = train_filt, n.trees = 250, 
+                     interaction.depth = 3, verbose = TRUE)
+      print(summary(gbm_mod))
+      pred <- predict(gbm_mod, newdata = test, n.trees = 250)
     }
     pred_df <- data.frame(Id = test$Id, pred = pred)
     #print(paste('nrow(pred_df)', nrow(pred_df)))
@@ -291,8 +297,15 @@ fol <- Expected ~ radardist_km + Ref_auc + Ref_5x5_10th_auc +
 
 rparts <- 
   run_mods(train_allref_auc, allrefna_train,
-           highExpected_train, fol, mod = 'rpart', k = 3)
+           highExpected_train, fol, mod = 'rpart', k = 10)
 # rpart tree gives an MAE of: .   Not too good
 # Try a randomForest
 library(randomForest)
-run_mods(train_allref_auc, allrefna_train, highExpected_train, fol, mod = 'rf')
+#run_mods(train_allref_auc, allrefna_train, highExpected_train, fol, mod = 'rf')
+# random forest was taking HOURS to run...
+
+gbm_maes <- run_mods(train_allref_auc, allrefna_train, highExpected_train, fol, mod = 'gbm',
+         k = 5)
+#  "Average MAE with 10-fold cv: 24.8861770452619"
+#  Need to inspect closer to see if I'm doing it right.
+
