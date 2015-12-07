@@ -9,9 +9,12 @@ output: pdf_document
 ##-----Load Libraries-----
 library(dplyr); library(randomForest); library(rpart);
 library(caret); library(ggplot2); library(MESS); library(randomForest)
-library(gbm)
+library(gbm); library(rpart.plot)
 ```
 
+## About
+
+This is Part 3 of 3 for the final project for the University of Washington Professional and Continuing Education Data Science certificate class #3 of 3.  I chose the Kaggle competition "How Much Did it Rain" (https://www.kaggle.com/c/how-much-did-it-rain-ii).  I did not work with any team members for this project.
 
 ## Competition Description and Summary
 
@@ -29,7 +32,32 @@ There were many parts of this competition that made it difficult and different f
 
 ### Data
 
-The data 
+Reprinted from the [competition data page](https://www.kaggle.com/c/how-much-did-it-rain-ii/data) the data columns are:
+
+  * Id:  A unique number for the set of observations over an hour at a gauge.
+  * minutes_past:  For each set of radar observations, the minutes past the top of the hour that the radar observations were carried out.  Radar observations are snapshots at that point in time.
+  * radardist_km: Distance of gauge from the radar whose observations are being reported.
+  * Ref: Radar reflectivity in km
+  * Ref_5x5_10th: 10th percentile of reflectivity values in 5x5 neighborhood around the gauge.
+  * Ref_5x5_50th: 50th percentile
+  * Ref_5x5_90th: 90th percentile
+  * RefComposite: Maximum reflectivity in the vertical column above gauge.  In dBZ.
+  * RefComposite_5x5_10th
+  * Ref Composite_5x5_50th
+  * RefComposite_5x5_90th
+  * RhoHV: Correlation coefficient (unitless)
+  * RhoHV_5x5_10th
+  * RhoHV_5x5_50th
+  * RhoHV_5x5_90th
+  * Zdr: Differential reflectivity in dB
+  * Zdr_5x5_10th
+  * Zdr_5x5_50th
+  * Zdr_5x5_90th
+  * Kdp: Specific differential phase (deg/km)
+  * Kdp_5x5_10th
+  * Kdp_5x5_50th
+  * Kdp_5x5_90th
+  * Expected:  Actual gauge observation in mm at the end of the hour.
 
 ### Scoring
 
@@ -48,24 +76,73 @@ mae <- function(actual, pred) {
 ### Data Clean-Up
 
 - link to note about re-scoring the competition.
+
+https://www.kaggle.com/c/how-much-did-it-rain-ii/forums/t/16622/ignored-ids
+
+> Please note that the MAE is now being computed only on Ids where at least one of the Ref values is non-null. In other words, it doesn't matter what value you predict for those Ids. All previous submissions have been rescored. 
+
+
 ### Flattening Observations
 
+![](ref_vs_minpast_id23513.png)
+
+AUC using `MESS` package.
+
 ### Changing Target Variable Distribution
+
+![](Expected_histogram.png)
+
+** Take the log **
+
+![](log_Expected_histogram.png)
 
 ### Cross Validation
 
 ### CART Model
 
+```{r cart_model, eval = FALSE}
+fol_expectedlog = Expected_log ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
+  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_5x5_10th_auc +
+  RefComposite_5x5_50th_auc
+cart <- rpart(fol_expectedlog, data = train_allref_auc_filtered)
+```
+
+Display CART model:
+
+Summary of CART model in Appendix B
+```{r cart_model_display}
+mycart <- readRDS('./final_cart_model.rds')
+prp(mycart)
+```
+
+Remember above values are the log -- need `exp(x) - 1` to remove log.
+
 ### GBM Model
+
+ Gaussian vs Laplace Distribution
+ 
+#### GBM Grid Search with Cross Validation
+
+Did a grid search with 10-fold cross validation.  Here are the results:
+
+#### Final GBM Model
+
+Replace below with final final gbm model:
+
+```{r final_gbm_model}
+mygbm <- readRDS('./gbm_mod_500_4_0.05.rds')
+summary(mygbm)
+```
 
 ## Competition Submission, Results
 
 ### Public Leaderboard
 
-![](kaggleLeaderboard.png)
+![](kaggleLeaderboard2.png)
 
 ## Conclusions
-## Appendix -- R Script
+
+## Appendix A -- R Script
 
 Below is the entirety of the script I built as I was completing this project.  It includes comments that I put as I was going along.  
 ```{r appendix, eval=FALSE}
@@ -695,5 +772,11 @@ pred_gbm_500_4_0.01 <- exp(pred_gbm_500_4_0.01) - 1
 summary(pred_gbm_500_4_0.01)
 write_output(unique(test$Id), pred_gbm_500_4_0.01)
 # Kaggle score: 23.93359  -- no real improvement in leaderboard
+```
+
+## Appendix B -- CART Model Summary
+
+```{r summary_cart}
+summary(mycart)
 ```
 
