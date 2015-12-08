@@ -6,9 +6,9 @@ I completed this as part of the University of Washington Professional and Contin
 
 This project included three deliverables:
 
-	* [Kaggle_part1_Byers.pdf](https://github.com/tybyers/kaggle_howmuchdiditrain/blob/2179c57c43bb468d1b7caeeef112604bdb748f64/Kaggle_Part1_Byers.pdf) (Nov 16 2015)
-	* [Part 2](https://github.com/tybyers/kaggle_howmuchdiditrain/blob/2179c57c43bb468d1b7caeeef112604bdb748f64/kaggle_part2_modeling.R) (I only submitted the R script) (Nov 30 2015)
-	* [Final](https://github.com/tybyers/kaggle_howmuchdiditrain/blob/2179c57c43bb468d1b7caeeef112604bdb748f64/kaggle_final_writeup.pdf) (Dec 7 2015)
+  *  [Kaggle_part1_Byers.pdf](https://github.com/tybyers/kaggle_howmuchdiditrain/blob/2179c57c43bb468d1b7caeeef112604bdb748f64/Kaggle_Part1_Byers.pdf) (Nov 16 2015)
+  *  [Part 2](https://github.com/tybyers/kaggle_howmuchdiditrain/blob/2179c57c43bb468d1b7caeeef112604bdb748f64/kaggle_part2_modeling.R) (I only submitted the R script) (Nov 30 2015)
+  *  [Final](https://github.com/tybyers/kaggle_howmuchdiditrain/blob/2179c57c43bb468d1b7caeeef112604bdb748f64/kaggle_final_writeup.pdf) (Dec 7 2015)
 
 ## About the Project
 
