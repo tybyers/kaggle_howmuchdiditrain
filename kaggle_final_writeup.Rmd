@@ -24,24 +24,24 @@ This competition was to predict how much it rained in a given location based on 
 
 This is a supervised learning problem, because we have a target variable `Expected` amount of rain in mm in an hour.  We use the radar measurements to predict the target variable.  The evaluation metric is Mean Absolute Error (MAE) for the Kaggle competition. 
 
-There were many parts of this competition that made it difficult and different from a typical Kaggle competition.  For example:
+There were many parts of this competition that made it difficult and different from a typical Kaggle competition.  For example:  
 
   * There are a lot of values for the target variable, `Expected`, that are outliers.  We have to filter these out for training purposes; *however* these values are still considered in the final scoring.
   * The goal is to predict how many mm of rain fell at a rain gauge in a single hour.  However, for each hour, we can have several radar observations. So, in essence, we sort of have to aggregate many observations down to one hour.
   * Around 38% of our data has must be filtered out for training purposes. This is explained more later.
   * A very large percentage of total radar observations across the different variables (63% of total values are NA).
   
-
 ### Data
 
-The data set for this competition is rather large, and one of the challenges was getting the data into a manageable format.  Some facts about the data:
+The data set for this competition is rather large, and one of the challenges was getting the data into a manageable format.  Some facts about the data:  
+
   * Observations in `train` data: 13,765,201.
   * Columns in `train` data: 24 (including target variable).
   * Unique `Id` values in `train` data: 1,180,845 (so 1.2 million "hours" of data).
   * Observations in `test` data: 8,022,756
   * Unique `Id` values in `test` data: 717,625.
 
-Reprinted from the [competition data page](https://www.kaggle.com/c/how-much-did-it-rain-ii/data) the data columns are:
+A description of the data set is below, as reprinted from the [competition data page](https://www.kaggle.com/c/how-much-did-it-rain-ii/data) the data columns are:
 
   * Id:  A unique number for the set of observations over an hour at a gauge.
   * minutes_past:  For each set of radar observations, the minutes past the top of the hour that the radar observations were carried out.  Radar observations are snapshots at that point in time.
@@ -66,7 +66,7 @@ Reprinted from the [competition data page](https://www.kaggle.com/c/how-much-did
   * Kdp_5x5_10th
   * Kdp_5x5_50th
   * Kdp_5x5_90th
-  * Expected:  Actual gauge observation in mm at the end of the hour.
+  * **Expected**:  Actual gauge observation in mm at the end of the hour.  (This is the _target_ variable).
 
 ### Scoring
 
@@ -76,30 +76,54 @@ The scoring for this competition is Mean Absolute Error: `mean(abs(actual - pred
 
 ## Modeling
 
-### Marshall-Palmer
+This section explains the steps I went through to transform the data and create a model for submission.
 
-explain M-P transformation
+### Marshall-Palmer Transformation
 
+One of the first things I did was to apply the Marshall-Palmer Transformation to all of my `Ref` values in the dataset (I did this for all the features that have `Ref` in them).  The Marshall-Palmer is a single-pol rainrate equation, and the transformation equation can be applied with the following R code: `(10^(Ref/10)/200)^(5/8)`.  For more information, see the [Kaggle forum](https://www.kaggle.com/c/how-much-did-it-rain-ii/forums/t/17496/what-else-besides-marshall-palmer). 
 
 ### Flattening Observations
 
-![](ref_vs_minpast_id23513.png)
+After applying the Marshall-Palmer transformation, I had to "flatten" the gauge-minute observations into gauge-hour observations.
 
-AUC using `MESS` package.
+For example, if we look at gauge-hour Id = 23513.  Below is the first 5 columns from that data set:
+
+```{r id23513, echo=FALSE}
+id23513 <- readRDS('./id23513.rds')
+id23513[,1:6]
+```
+
+Figure 1 shows the `Ref` column plotted versus `minutes_past` for this gauge-hour. Note this is raw `Ref`, not transformed via Marshall-Palmer.
+
+![Ref vs. minutes_past For Id = 23513](ref_vs_minpast_id23513.png)
+
+Now, there are many ways we could "flatten" this data into a single gauge-hour reading.  The way I decided to do so was to find the area under the curve, setting anchors at points (-0.01,0), (60.01, 0). I used the `auc` function from the `MESS` package to do these calculations -- and made them pretty fast using `dplyr` command `group_by(Id) %>% summarise(...)`. These anchor choices may not be appropriate, but some of the gauge readings might have only had one valid point per hour, so we had to start somewhere.  
+
+In the formulas I show in my models below, I denote these transformed variables with a `_auc` appended to the end of the original feature name (i.e. `Ref` becomes `Ref_auc`).
+
+### Adding Inverse km^2^
+
+Another variable I added was the inverse of the `radardist_km^2`.  I realized that radar is likely affected by distance in an inverse-square fashion (like intensity of sound or light), so added this as a variable, and it helped when I was doing cross-validation.
 
 ### Changing Target Variable Distribution
 
-![](Expected_histogram.png)
+Another transformation I did which resulted in much better results was to change the distribution of the data.  After filtering out `Expected` values of greater than 350, which were bad readings, I noticed that the distribution frequency for the `Expected` values was strongly skew-right, as shown in Figure 2.
 
-** Take the log **
+![Histogram of Expected (Filtered out Expected > 350)](Expected_histogram.png)
 
-![](log_Expected_histogram.png)
+But, if we take the log of `Expected` (plus 1 so there isn't an error for `Expected = 0`), then we get the distribution in Figure 3.  This distribution is more near-normal, which helps give us much better predictive ability.
+
+![Histogram of log(Expected) (Filtered out Expected > 350)](log_Expected_histogram.png)
 
 ### Cross Validation
 
-I performed a 10-fold cross-validation technique...
+When testing models, I performed a 10-fold cross validation technique, and averaged the MAE from each fold's model.  One mistake I made here was to not set the random seed every time I entered into the CV function -- this would have made results reproducible and comparible across folds.  
+
+The code for my CV functions may be found in Appendix A -- I had a few different such functions.  Each of these functions starts with a name like `run_mods`.
 
 ### CART Model
+
+One of my first submitted models was a CART decision tree model.  I used the formula shown below.  My 10-fold CV score for this model was 23.3009 and my Kaggle score was 23.93418.
 
 ```{r cart_model, eval = FALSE}
 fol_expectedlog = Expected_log ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
@@ -108,32 +132,39 @@ fol_expectedlog = Expected_log ~ radardist_km + Ref_auc + Ref_5x5_10th_auc +
 cart <- rpart(fol_expectedlog, data = train_allref_auc_filtered)
 ```
 
-Display CART model:
+Figure 4 shows a plot of my final decision tree model that I used for submission.  Clearly the tree did not use all of the features (only 3 of them!), and it only split the target into four different values, so it's not a great model. Please note that the values for the decision tree are the log of the Expected values -- need `exp(x) - 1` to remove log. A summary of CART model is shown in Appendix B.
 
-Summary of CART model in Appendix B
-```{r cart_model_display}
+```{r cart_model_display, fig.cap='CART Decision Tree for Submitted CART Model'}
 mycart <- readRDS('./final_cart_model.rds')
 prp(mycart)
 ```
 
-Remember above values are the log -- need `exp(x) - 1` to remove log.
-
 ### GBM Model
 
-Initially poor results
+I then turned to a gradient boosted machine, or `gbm` model. At first I got very poor results -- much worse than for the CART model.  Then I played around with the distributions, and once I changed the distribution of the target variable to `log(Expected)` and chose a `gaussian` instead of `laplace` distribution, results started getting better.
 
- Gaussian vs Laplace Distribution
- 
 #### GBM Grid Search with Cross Validation
 
-Did a grid search with 10-fold cross validation.  Here are the results:
+To try to get the best gbm model possible, I created a grid search using `interaction.depth = c(1,2,3,4)`, `n.trees = c(100, 250, 500)`, and `shrinkage = c(0.001, 0.01, 0.05, 0.1)`.  I completed a 10-fold cross-validation using the following formula:
+
+```{r gbm_formula, eval=FALSE}
+fol_thruKdp_gbm <- fol <- Expected_log ~ radardist_km + radardist_km_sq_inv +
+  Ref_auc + Ref_5x5_10th_auc + 
+  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_auc +
+  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc +
+  RefComposite_5x5_90th_auc + RhoHV_auc + Zdr_auc + Kdp_auc
+```
+
+The results for the grid search I completed are below (this took about 36 hours to run all of these):
 
 ```{r gbm_grid, echo=FALSE}
 mygbmgrid <- read.csv('./gbm_grid_maes.csv')
 mygbmgrid
 ```
 
-```{r mygbm_grid_plot_all, echo=FALSE, fig.cap="your caption"}
+Figure 5 shows the curves for the above data -- lines are grouped by n.tree/shrinkage pairs.  We can see that the best MAEs occur with more trees, higher shrinkage, and more interaction depth.  We probably could have gone a little farther with the interaction depth and number of trees, but the gain was definitely leveling out.  
+
+```{r mygbm_grid_plot_all, echo=FALSE, fig.cap="10-Fold CV MAE Values for Given GBM Tunes"}
 mygbmgrid$shrinkage <- as.factor(mygbmgrid$shrinkage)
 mygbmgrid$n.trees <- as.factor(mygbmgrid$n.trees)
 mygbmgrid$trees_shrinkage <- paste0(mygbmgrid$n.trees,'_',mygbmgrid$shrinkage)
@@ -142,9 +173,9 @@ ggplot(mygbmgrid, aes(x = interaction.depth, y = MAE, group = trees_shrinkage)) 
   geom_line(aes(color = shrinkage)) + scale_size_discrete(range = c(3, 6))
 ```
 
-And zoom in to the bottom:
+Figure 6 shows a zoomed-in view of the best several models, since on the previous scale we couldn't see the change very well.
 
-```{r gbm_grid_zoom, echo=FALSE, fig.cap="your caption"}
+```{r gbm_grid_zoom, echo=FALSE, fig.cap="10-Fold CV MAE for Best GBM Tunes", warning = FALSE}
 ggplot(mygbmgrid, aes(x = interaction.depth, y = MAE, group = trees_shrinkage)) + 
   geom_point(aes(color = shrinkage, size = n.trees)) + 
   geom_line(aes(color = shrinkage)) + 
@@ -155,32 +186,42 @@ ggplot(mygbmgrid, aes(x = interaction.depth, y = MAE, group = trees_shrinkage)) 
 
 #### Final GBM Model
 
+Based on this, I chose my final gbm model to be `r n.trees = 500`, `r interaction.depth = 4`, and `r shrinkage = 0.1`. Figure 7 is the model summary -- basically the variable importances.
 
-Replace below with final final gbm model:
-
-```{r final_gbm_model}
+```{r final_gbm_model, fig.cap='Relative Influence of Features, Best GBM Model'}
 mygbm <- readRDS('./gbm_mod_500_4_0.1.rds')
 summary(mygbm)
 ```
 
 ## Competition Submission, Results
 
-Submitted two models at the end. 
+I submitted a total of 7 entries to the Kaggle competition.  The best GBM model gave me the best Kaggle score.
 
 ### Public Leaderboard
 
-![](kaggleLeaderboard2.png)
+Figure 8 is my public leaderboard score just after I submitted my final model.  It is a bit worse than my CV score, but still in the neighborhood.
 
-![](kaggleLeaderboard3.png)
+![Kaggle Public Leaderboard Standings, Final Model Submitted](kaggleLeaderboard3.png)  
+
+
+### Private Leaderboard
+
+The Private, or final, leaderboard was revealed at 5:00 MST on 7 December.  I more or less stayed in the same position, but my score dropped considerably (so did everyone else's score).  
+
+![Kaggle Private Leaderboard (final) Results](kaggleLeaderboard_final.png)  
 
 ## Conclusions
 
-Learned a lot.  Had I started this competition sooner, and had more time over holidays...
+I learned a lot and had fun doing this competition.  Had I started this competition sooner, and given myself more time to work on it over the Thanksgiving holiday, I would have:  
 
-More variables -- did not use them all.  Use RhoHV to filter out bad values. 
-
-GBM grids leveling out though -- probably little extra I could have gotten. 
-
+  * Used more variables -- did not use them all.
+  * Use RhoHV to filter out bad values, per some information I found online.
+  * Learned more about the other variables in the data.
+  * Tried a different transformation besides Marshall-Palmer.
+  * Changed my method of calculating auc or flattening variables. It clearly didn't work as well as I hoped (I'm still in the bottom half of the leaderboard).
+  * Done more with my GBM grids -- perhaps could have gained a little more with more trees or tweaking other results.
+  
+However, this was a good project and fun to work on, and I am happy I chose it.
 
 ## Appendix A -- R Script
 
