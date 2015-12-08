@@ -2,7 +2,9 @@
 title: "How Much Did It Rain -- Kaggle Competition"
 author: "Tyler Byers"
 date: "December 6, 2015"
-output: pdf_document
+output: 
+  pdf_document:
+        fig_caption: true
 ---
 
 ```{r setup, results='hide', echo = FALSE, message=FALSE}
@@ -14,7 +16,7 @@ library(gbm); library(rpart.plot)
 
 ## About
 
-This is Part 3 of 3 for the final project for the University of Washington Professional and Continuing Education Data Science certificate class #3 of 3.  I chose the Kaggle competition "How Much Did it Rain" (https://www.kaggle.com/c/how-much-did-it-rain-ii).  I did not work with any team members for this project.
+This is Part 3 of 3 for the final project for the University of Washington Professional and Continuing Education Data Science certificate class #3 of 3.  I chose the Kaggle competition "How Much Did it Rain" (https://www.kaggle.com/c/how-much-did-it-rain-ii).  I did not work with any team members for this project.  For all my project files, please see my repo on GitHub: https://github.com/tybyers/kaggle_howmuchdiditrain. 
 
 ## Competition Description and Summary
 
@@ -31,6 +33,13 @@ There were many parts of this competition that made it difficult and different f
   
 
 ### Data
+
+The data set for this competition is rather large, and one of the challenges was getting the data into a manageable format.  Some facts about the data:
+  * Observations in `train` data: 13,765,201.
+  * Columns in `train` data: 24 (including target variable).
+  * Unique `Id` values in `train` data: 1,180,845 (so 1.2 million "hours" of data).
+  * Observations in `test` data: 8,022,756
+  * Unique `Id` values in `test` data: 717,625.
 
 Reprinted from the [competition data page](https://www.kaggle.com/c/how-much-did-it-rain-ii/data) the data columns are:
 
@@ -61,25 +70,15 @@ Reprinted from the [competition data page](https://www.kaggle.com/c/how-much-did
 
 ### Scoring
 
-```{r mae, eval=FALSE}
-mae <- function(actual, pred) {
-  mae <-  mean(abs(actual - pred))
-  print(paste('MAE: ', mae))
-  mae
-}
-```
+The scoring for this competition is Mean Absolute Error: `mean(abs(actual - prediction))`, which is a simple metric. However, we couldn't score based on *all* the data -- it had to be done only for those `Id` hours where all the `Ref` values were non-null.  For more information see the Kaggle forum discussion: (https://www.kaggle.com/c/how-much-did-it-rain-ii/forums/t/16622/ignored-ids), which says:
 
-
+> Please note that the MAE is now being computed only on Ids where at least one of the Ref values is non-null. In other words, it doesn't matter what value you predict for those Ids. All previous submissions have been rescored. 
 
 ## Modeling
 
-### Data Clean-Up
+### Marshall-Palmer
 
-- link to note about re-scoring the competition.
-
-https://www.kaggle.com/c/how-much-did-it-rain-ii/forums/t/16622/ignored-ids
-
-> Please note that the MAE is now being computed only on Ids where at least one of the Ref values is non-null. In other words, it doesn't matter what value you predict for those Ids. All previous submissions have been rescored. 
+explain M-P transformation
 
 
 ### Flattening Observations
@@ -97,6 +96,8 @@ AUC using `MESS` package.
 ![](log_Expected_histogram.png)
 
 ### Cross Validation
+
+I performed a 10-fold cross-validation technique...
 
 ### CART Model
 
@@ -119,28 +120,67 @@ Remember above values are the log -- need `exp(x) - 1` to remove log.
 
 ### GBM Model
 
+Initially poor results
+
  Gaussian vs Laplace Distribution
  
 #### GBM Grid Search with Cross Validation
 
 Did a grid search with 10-fold cross validation.  Here are the results:
 
+```{r gbm_grid, echo=FALSE}
+mygbmgrid <- read.csv('./gbm_grid_maes.csv')
+mygbmgrid
+```
+
+```{r mygbm_grid_plot_all, echo=FALSE, fig.cap="your caption"}
+mygbmgrid$shrinkage <- as.factor(mygbmgrid$shrinkage)
+mygbmgrid$n.trees <- as.factor(mygbmgrid$n.trees)
+mygbmgrid$trees_shrinkage <- paste0(mygbmgrid$n.trees,'_',mygbmgrid$shrinkage)
+ggplot(mygbmgrid, aes(x = interaction.depth, y = MAE, group = trees_shrinkage)) + 
+  geom_point(aes(color = shrinkage, size = n.trees)) + 
+  geom_line(aes(color = shrinkage)) + scale_size_discrete(range = c(3, 6))
+```
+
+And zoom in to the bottom:
+
+```{r gbm_grid_zoom, echo=FALSE, fig.cap="your caption"}
+ggplot(mygbmgrid, aes(x = interaction.depth, y = MAE, group = trees_shrinkage)) + 
+  geom_point(aes(color = shrinkage, size = n.trees)) + 
+  geom_line(aes(color = shrinkage)) + 
+  scale_y_continuous(limits = c(23.125, 23.33)) +
+  scale_size_discrete(range = c(3, 6))
+
+```
+
 #### Final GBM Model
+
 
 Replace below with final final gbm model:
 
 ```{r final_gbm_model}
-mygbm <- readRDS('./gbm_mod_500_4_0.05.rds')
+mygbm <- readRDS('./gbm_mod_500_4_0.1.rds')
 summary(mygbm)
 ```
 
 ## Competition Submission, Results
 
+Submitted two models at the end. 
+
 ### Public Leaderboard
 
 ![](kaggleLeaderboard2.png)
 
+![](kaggleLeaderboard3.png)
+
 ## Conclusions
+
+Learned a lot.  Had I started this competition sooner, and had more time over holidays...
+
+More variables -- did not use them all.  Use RhoHV to filter out bad values. 
+
+GBM grids leveling out though -- probably little extra I could have gotten. 
+
 
 ## Appendix A -- R Script
 
@@ -772,6 +812,22 @@ pred_gbm_500_4_0.01 <- exp(pred_gbm_500_4_0.01) - 1
 summary(pred_gbm_500_4_0.01)
 write_output(unique(test$Id), pred_gbm_500_4_0.01)
 # Kaggle score: 23.93359  -- no real improvement in leaderboard
+
+#Another model based on CV:
+gbm_mod_500_4_0.05 <- gbm(formula = fol_thruKdp_gbm, data = train_allref_auc, 
+                          n.trees = 500, 
+                          interaction.depth = 4,
+                          shrinkage = 0.05, verbose = TRUE,
+                          distribution = 'gaussian')
+
+pred_gbm_500_4_0.05 <- predict(gbm_mod_500_4_0.05, newdata = test_allref_auc,
+                               n.trees = 500)
+pred_gbm_500_4_0.05 <- exp(pred_gbm_500_4_0.05) - 1
+summary(pred_gbm_500_4_0.05)
+# wow, a bunch of predictions were below 0
+pred_gbm_500_4_0.05[pred_gbm_500_4_0.05 < 0] <- 0
+write_output(unique(test$Id), pred_gbm_500_4_0.05)
+saveRDS(gbm_mod_500_4_0.05, 'gbm_mod_500_4_0.05.rds')
 ```
 
 ## Appendix B -- CART Model Summary

@@ -637,7 +637,28 @@ pred_gbm_500_4_0.05 <- predict(gbm_mod_500_4_0.05, newdata = test_allref_auc,
                                n.trees = 500)
 pred_gbm_500_4_0.05 <- exp(pred_gbm_500_4_0.05) - 1
 summary(pred_gbm_500_4_0.05)
-# wow, a bunch of predictions were below 0
+# wow, a bunch of predictions were below 0 (170 were)
 pred_gbm_500_4_0.05[pred_gbm_500_4_0.05 < 0] <- 0
 write_output(unique(test$Id), pred_gbm_500_4_0.05)
+# Kaggle score: 23.87058 -- moved 55 places up the leaderboard to 369!
+
 saveRDS(gbm_mod_500_4_0.05, 'gbm_mod_500_4_0.05.rds')
+# Save model for my report.
+
+gbm_mod_500_4_0.1 <- gbm(formula = fol_thruKdp_gbm, data = train_allref_auc, 
+                          n.trees = 500, 
+                          interaction.depth = 4,
+                          shrinkage = 0.1, verbose = TRUE,
+                          distribution = 'gaussian')
+
+pred_gbm_500_4_0.1 <- predict(gbm_mod_500_4_0.1, newdata = test_allref_auc,
+                               n.trees = 500)
+pred_gbm_500_4_0.1 <- exp(pred_gbm_500_4_0.1) - 1
+summary(pred_gbm_500_4_0.1)
+sum(pred_gbm_500_4_0.1 < 0)
+# 17 are less than 0
+pred_gbm_500_4_0.1[pred_gbm_500_4_0.1 < 0] <- 0
+summary(pred_gbm_500_4_0.1)
+write_output(unique(test$Id), pred_gbm_500_4_0.1)
+# Kaggle score: 23.85550.  Moved up another 10 spots to 359, which will be
+#  my final resting place until public LB revealed.

@@ -1,838 +1,147 @@
 ---
-title: "How Much Did It Rain -- Kaggle Competition"
+title: "How Much Did It Rain?  Part I"
 author: "Tyler Byers"
-date: "December 6, 2015"
-output: 
-  pdf_document:
-        fig_caption: true
+date: "November 16, 2015"
+output: pdf_document
 ---
-
-```{r setup, results='hide', echo = FALSE, message=FALSE}
-##-----Load Libraries-----
-library(dplyr); library(randomForest); library(rpart);
-library(caret); library(ggplot2); library(MESS); library(randomForest)
-library(gbm); library(rpart.plot)
-```
 
 ## About
 
-This is Part 3 of 3 for the final project for the University of Washington Professional and Continuing Education Data Science certificate class #3 of 3.  I chose the Kaggle competition "How Much Did it Rain" (https://www.kaggle.com/c/how-much-did-it-rain-ii).  I did not work with any team members for this project.  For all my project files, please see my repo on GitHub: https://github.com/tybyers/kaggle_howmuchdiditrain. 
+This is Part 1 of the final project for the University of Washington Professional and Continuing Education Data Science certificate class #3 of 3.  I chose the Kaggle competition "How Much Did it Rain" (https://www.kaggle.com/c/how-much-did-it-rain-ii).  This deliverable is mostly telling about the project and exploring the data a little bit.  I am working on this project alone -- no team members.
 
-## Competition Description and Summary
+## Problem Description and Summary
 
-This competition was to predict how much it rained in a given location based on radar readings.  Because the amount of rainfall can be highly localized to an area, and because it is impossible to put a rain gauge in every location, or even in a lot of different locations, calculating the amount of rainfall a certain location received can be important.  Since these data in particular are for midwestern corn-growing states, estimating the amount of rain a certain farm received can be important -- whether to check for crop damage, or to plan harvest, or perhaps do localized flooding mitigation.  If we can use radar to accurately calculate the rainfall in a given location, it may help the farmers with these problems.  This has applicability to more than just farms too.
+This competition is to predict how much it rained in a given location based on radar readings.  Because the amount of rainfall can be highly localized to an area, and because it is impossible to put a rain gauge in every location, or even in a lot of different locations, calculating the amount of rainfall a certain location received can be important.  Since these data in particular are for midwestern corn-growing states, estimating the amount of rain a certain farm received can be important -- whether to check for crop damage, or to plan harvest, or perhaps do localized flooding mitigation.  If we can use radar to accurately calculate the rainfall in a given location, it may help the farmers with these problems.  This has applicability to more than just farms too.
 
 This is a supervised learning problem, because we have a target variable `Expected` amount of rain in mm in an hour.  We use the radar measurements to predict the target variable.  The evaluation metric is Mean Absolute Error (MAE) for the Kaggle competition. 
 
-There were many parts of this competition that made it difficult and different from a typical Kaggle competition.  For example:
+As described below, the main thing that I'll have to do with the data when doing my prediction is to filter out bad values for `Expected` -- probably those values with readings above 350 mm in an hour.  As described on Kaggle, the gauges can often give faulty readings.  There will be a bit of work involved with all the NA data -- not sure what I'll do with that yet.  Choosing the correct algorithms will be non-trivial, and I'll have to really think hard about how to aggregate the data since there may be anywhere between one and nineteen radar observations in an hour. 
 
-  * There are a lot of values for the target variable, `Expected`, that are outliers.  We have to filter these out for training purposes; *however* these values are still considered in the final scoring.
-  * The goal is to predict how many mm of rain fell at a rain gauge in a single hour.  However, for each hour, we can have several radar observations. So, in essence, we sort of have to aggregate many observations down to one hour.
-  * Around 38% of our data has must be filtered out for training purposes. This is explained more later.
-  * A very large percentage of total radar observations across the different variables (63% of total values are NA).
-  
+## Set Environment
 
-### Data
+First we need to set our environment to the proper working directory and load the needed R packages.
 
-The data set for this competition is rather large, and one of the challenges was getting the data into a manageable format.  Some facts about the data:
-  * Observations in `train` data: 13,765,201.
-  * Columns in `train` data: 24 (including target variable).
-  * Unique `Id` values in `train` data: 1,180,845 (so 1.2 million "hours" of data).
-  * Observations in `test` data: 8,022,756
-  * Unique `Id` values in `test` data: 717,625.
-
-Reprinted from the [competition data page](https://www.kaggle.com/c/how-much-did-it-rain-ii/data) the data columns are:
-
-  * Id:  A unique number for the set of observations over an hour at a gauge.
-  * minutes_past:  For each set of radar observations, the minutes past the top of the hour that the radar observations were carried out.  Radar observations are snapshots at that point in time.
-  * radardist_km: Distance of gauge from the radar whose observations are being reported.
-  * Ref: Radar reflectivity in km
-  * Ref_5x5_10th: 10th percentile of reflectivity values in 5x5 neighborhood around the gauge.
-  * Ref_5x5_50th: 50th percentile
-  * Ref_5x5_90th: 90th percentile
-  * RefComposite: Maximum reflectivity in the vertical column above gauge.  In dBZ.
-  * RefComposite_5x5_10th
-  * Ref Composite_5x5_50th
-  * RefComposite_5x5_90th
-  * RhoHV: Correlation coefficient (unitless)
-  * RhoHV_5x5_10th
-  * RhoHV_5x5_50th
-  * RhoHV_5x5_90th
-  * Zdr: Differential reflectivity in dB
-  * Zdr_5x5_10th
-  * Zdr_5x5_50th
-  * Zdr_5x5_90th
-  * Kdp: Specific differential phase (deg/km)
-  * Kdp_5x5_10th
-  * Kdp_5x5_50th
-  * Kdp_5x5_90th
-  * Expected:  Actual gauge observation in mm at the end of the hour.
-
-### Scoring
-
-The scoring for this competition is Mean Absolute Error: `mean(abs(actual - prediction))`, which is a simple metric. However, we couldn't score based on *all* the data -- it had to be done only for those `Id` hours where all the `Ref` values were non-null.  For more information see the Kaggle forum discussion: (https://www.kaggle.com/c/how-much-did-it-rain-ii/forums/t/16622/ignored-ids), which says:
-
-> Please note that the MAE is now being computed only on Ids where at least one of the Ref values is non-null. In other words, it doesn't matter what value you predict for those Ids. All previous submissions have been rescored. 
-
-## Modeling
-
-### Marshall-Palmer
-
-explain M-P transformation
-
-
-### Flattening Observations
-
-![](ref_vs_minpast_id23513.png)
-
-AUC using `MESS` package.
-
-### Changing Target Variable Distribution
-
-![](Expected_histogram.png)
-
-** Take the log **
-
-![](log_Expected_histogram.png)
-
-### Cross Validation
-
-I performed a 10-fold cross-validation technique...
-
-### CART Model
-
-```{r cart_model, eval = FALSE}
-fol_expectedlog = Expected_log ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_5x5_10th_auc +
-  RefComposite_5x5_50th_auc
-cart <- rpart(fol_expectedlog, data = train_allref_auc_filtered)
-```
-
-Display CART model:
-
-Summary of CART model in Appendix B
-```{r cart_model_display}
-mycart <- readRDS('./final_cart_model.rds')
-prp(mycart)
-```
-
-Remember above values are the log -- need `exp(x) - 1` to remove log.
-
-### GBM Model
-
-Initially poor results
-
- Gaussian vs Laplace Distribution
- 
-#### GBM Grid Search with Cross Validation
-
-Did a grid search with 10-fold cross validation.  Here are the results:
-
-```{r gbm_grid, echo=FALSE}
-mygbmgrid <- read.csv('./gbm_grid_maes.csv')
-mygbmgrid
-```
-
-```{r mygbm_grid_plot_all, echo=FALSE, fig.cap="your caption"}
-mygbmgrid$shrinkage <- as.factor(mygbmgrid$shrinkage)
-mygbmgrid$n.trees <- as.factor(mygbmgrid$n.trees)
-mygbmgrid$trees_shrinkage <- paste0(mygbmgrid$n.trees,'_',mygbmgrid$shrinkage)
-ggplot(mygbmgrid, aes(x = interaction.depth, y = MAE, group = trees_shrinkage)) + 
-  geom_point(aes(color = shrinkage, size = n.trees)) + 
-  geom_line(aes(color = shrinkage)) + scale_size_discrete(range = c(3, 6))
-```
-
-And zoom in to the bottom:
-
-```{r gbm_grid_zoom, echo=FALSE, fig.cap="your caption"}
-ggplot(mygbmgrid, aes(x = interaction.depth, y = MAE, group = trees_shrinkage)) + 
-  geom_point(aes(color = shrinkage, size = n.trees)) + 
-  geom_line(aes(color = shrinkage)) + 
-  scale_y_continuous(limits = c(23.125, 23.33)) +
-  scale_size_discrete(range = c(3, 6))
-
-```
-
-#### Final GBM Model
-
-
-Replace below with final final gbm model:
-
-```{r final_gbm_model}
-mygbm <- readRDS('./gbm_mod_500_4_0.1.rds')
-summary(mygbm)
-```
-
-## Competition Submission, Results
-
-Submitted two models at the end. 
-
-### Public Leaderboard
-
-![](kaggleLeaderboard2.png)
-
-![](kaggleLeaderboard3.png)
-
-## Conclusions
-
-Learned a lot.  Had I started this competition sooner, and had more time over holidays...
-
-More variables -- did not use them all.  Use RhoHV to filter out bad values. 
-
-GBM grids leveling out though -- probably little extra I could have gotten. 
-
-
-## Appendix A -- R Script
-
-Below is the entirety of the script I built as I was completing this project.  It includes comments that I put as I was going along.  
-```{r appendix, eval=FALSE}
-##--------------------------------------------
-##
-## Kaggle Final Project Part #2 of 2
-##
-## Class: Methods for Data Science at Scale
-## UW Data Science Certificate Class #3 of 3
-##
-## Tyler Byers
-## Nov 30, 2015
-##--------------------------------------------
-
-## This documents my work on the Kaggle Project for the UW Methods for
-##  Data Science at Scale course.  This is part #2 of my project.
-
-## This is the only document I am turning in.  You may read my
-##  code and look at my notes to see what I have tried.  I tried to document
-## my local CV scores as well as my Kaggle scores when submitted.
-
-## Suggest you do NOT run the following code, as it may take hours to run!!
-
+```{r set_environment, message=FALSE}
 ##-----Set working directory-----
-setwd('~/UW_DataScience/DataAtScale/kaggle_howmuchdiditrain/')
+setwd('~/UW_DataScience/DataAtScale/final_project/')
 
 ##-----Load Libraries-----
-library(dplyr); library(randomForest); library(rpart);
-library(caret); library(ggplot2); library(MESS); library(randomForest)
-library(gbm)
+library(dplyr); library(ggplot2); library(readr)
+```
 
-##-----Load Data Sets --------------
-train <- read.csv('./data/train.csv')
-test <- read.csv('./data/test.csv')
+## Load Data, Perform EDA
 
-## Filter out train$Expected 
-#train <- train %>% filter(Expected < 350)
-## Realized later that doing this messes up the scoring, so need to leave all values in.  
-## Maybe when training we can ignore it.
+Now we'll load the data and explore it a bit.
 
-## This is a mostly a feature engineering project.
-##  First thing I'm going to do is just take the mean and 
-##  median of each radar reading and then model with that.  
+```{r load_data}
+#rain <- read.csv('./data/train.csv')  # was throwing an error when knitting/caching PDF
+rain <- readRDS('./data/rain.rds') # converted file to RDS to load here
+```
 
-train_1perhr <- train %>% group_by(Id) %>%
-  summarise(n_obs = n(), radardist_km = first(radardist_km),
-            Ref_mean = mean(Ref, na.rm = TRUE), #Ref_med = median(Ref, na.rm = TRUE),
-            Ref_5x5_10th_mean = mean(Ref_5x5_10th, na.rm = TRUE),
-            Ref_5x5_50th_mean = mean(Ref_5x5_50th, na.rm = TRUE),
-            Ref_5x5_90th_mean = mean(Ref_5x5_90th, na.rm = TRUE),
-            RefComposite_mean = mean(RefComposite, na.rm = TRUE),
-            RefComposite_5x5_10th_mean = mean(RefComposite_5x5_10th, na.rm = TRUE),
-            RefComposite_5x5_50th_mean = mean(RefComposite_5x5_50th, na.rm = TRUE),
-            RefComposite_5x5_90th_mean = mean(RefComposite_5x5_90th, na.rm = TRUE),
-            RhoHV_mean = mean(RhoHV, na.rm = TRUE),
-            RhoHV_5x5_10th_mean = mean(RhoHV_5x5_10th, na.rm = TRUE),
-            RhoHV_5x5_50th_mean = mean(RhoHV_5x5_50th, na.rm = TRUE),
-            RhoHV_5x5_90th_mean = mean(RhoHV_5x5_90th, na.rm = TRUE),
-            Zdr_mean = mean(Zdr, na.rm = TRUE),
-            Zdr_5x5_10th_mean = mean(Zdr_5x5_10th, na.rm = TRUE),
-            Zdr_5x5_50th_mean = mean(Zdr_5x5_50th, na.rm = TRUE),
-            Zdr_5x5_90th_mean = mean(Zdr_5x5_90th, na.rm = TRUE),
-            Kdp_mean = mean(Kdp, na.rm = TRUE),
-            Kdp_5x5_10th_mean = mean(Kdp_5x5_10th, na.rm = TRUE),
-            Kdp_5x5_50th_mean = mean(Kdp_5x5_50th, na.rm = TRUE),
-            Kdp_5x5_90th_mean = mean(Kdp_5x5_90th, na.rm = TRUE),
-            Expected = first(Expected))
+```{r data_summary, cache = TRUE}
+dim(rain)
+str(rain)
+summary(rain)
+```
 
-## Function to check error
-mae <- function(actual, pred) {
-  mae <-  mean(abs(actual - pred))
-  print(paste('MAE: ', mae))
-  mae
-}
+I notice with the summary that a very high percentage of several of the variables are NA. So we're going to either have to choose a prediction algorithm that can handle NA values, or get rid of those values, or handle them some other way.  
 
-write_output <- function(id, pred) {
-  output <- data.frame(Id = id, Expected = pred)
-  curdatetime <- strftime(Sys.time(), '%Y%m%d_%H%M%S')
-  write.csv(output, paste0('output/', curdatetime, '.csv'), row.names = FALSE)
-  print(paste0('Wrote file: ',  paste0('/output/', curdatetime, '.csv')))
-}
+### Explore Target Variable
 
-## Going to do a baseline test using the mean rainfall for all observations
-mean_all <- mean((train_1perhr %>% filter(Expected < 350))$Expected)  # mean of Expected with obs > 350 filtered
-mae(train_1perhr$Expected[!is.na (train_1perhr$Ref_mean)], mean_all)
-# MAE: 11.77 -- hmm, doesn't seem right (later -- was with filtered Expected vals)
-#  With ugly bad Expeced vals, score is 27.2388, much more in line w/ Kaggle score.
-write_output(unique(test$Id), mean_all)
-# kaggle score: 27.82422
+One interesting thing about the data is that the target variable, `Expected` is repeated several times for each `Id`.  This is because there are several radar observations per hour per `Id` but only one `Expected` reading, which is the millimeters of rain in that observation hour.
 
-## What if I take the mean of Expected, filtering out over 150, what then is my score?
-mae(train_1perhr$Expected[!is.na (train_1perhr$Ref_mean)], 
-    mean((train_1perhr %>% filter(Expected < 150))$Expected))
-## Score: 24.5667
+So, in order to see what our distribution of rain measurements actually looks like, we have to take just a single value per `Id`.  We are going to take the first value as well as the mean Expected value for each Id.  If they are not the same, then there is some problem with the data, because all the values per Id chunk should be identical.   
 
-median(train_1perhr$Expected[!is.na (train_1perhr$Ref_mean)])
-mae(train_1perhr$Expected[!is.na (train_1perhr$Ref_mean)], 1.27)
-## Score: 23.53 --- would be top of leaderboard, seems too good to be true though
-write_output(unique(test$Id), 1.27)
-## Kaggle score: 24.1578, so it was too good to be true :)
-
-## Now need to figure out how to format the data so that we know how many minutes 
-##  each reading is good for.
-
-# Try the Murray-Palmer transformation, using the mean ref (nothing fancy)
-#  Still not doing real machine learning, just calculation, so don't need
-#  to do CV or anything like that. 
-mp_pred <- (10^(train_1perhr$Ref_mean/10)/200)^(5/8)
-mae(train_1perhr$Expected[!is.na (train_1perhr$Ref_mean)], 
-    mp_pred[!is.na (mp_pred)])
-## Local score: 23.361129
-
-# Now do this calculation for the test set
-test_1perhr <- test %>% group_by(Id) %>% 
-  summarise(n_obs = n(), radardist_km = first(radardist_km),
-            Ref_mean = mean(Ref, na.rm = TRUE))
-mp_pred_test <- (10^(test_1perhr$Ref_mean/10)/200)^(5/8)
-## Fill in the NAs with 9999
-mp_pred_test[is.na (mp_pred_test)] <- 9999
-write_output(unique(test$Id), mp_pred_test)
-## Kaggle score: 24.01167, moved up to 377th place
-
-
-## Want to do a spline-fit under the curve.
-## Can do a spline fit for each and every id
-# system.time(Ref_spline <- sapply(unique(train$Id)[1:250], function(id) {
-#   if(id %% 1000 == 1) {
-#     print(paste(Sys.time(), ': Id = ', id))
-#   }
-#   #id_df <- train %>% filter(Id == id)
-#   id_rows <- which(train$Id == id)
-#   if(sum(!(is.na (train$Ref[id_rows]))) > 0) {
-#     # do the calculation. Sort of a simple integration
-#     sum(spline(x = train$minutes_past[id_rows],
-#                y = train$Ref[id_rows], xout = 0:60)$y)/60
-#   } else {
-#     NA
-#   }
-# })
-# )
-# The above is going to take around 26 hours to do. Need a different way.
-
-
-# Maybe take advantage of the group_by in dplyr
-# do auc from MESS package....but cannot have NAs on the ends
-valid_ids <- train_1perhr$Id[which(!is.na (train_1perhr$Ref_mean))]
-system.time(Ref_spline <- train %>% filter(Id %in% valid_ids) %>%
-              group_by(Id) %>% 
-              summarise(Ref_spline_periodic = sum(spline(x = minutes_past,
-                                                         y = Ref, xout = 0:60,
-                                                         method = 'periodic')$y)/60))
-
-# This took 177 seconds! Sweet!  (with method = 'periodic')
-# However, it led to some horribly unbounded spline fits, leading to Inf
-#  results on the Murray Palmar fit.
-sfit_pred <-  (10^(Ref_spline$Ref_spline_periodic/10)/200)^(5/8)
-sfit_pred[sfit_pred > 200] <- 150
-mae(train_1perhr$Expected[!is.na (train_1perhr$Ref_mean)], 
-    sfit_pred)
-# Local MAE: 23.4652
-
-# Try with a natural spline fit:
-Ref_spline_natural <- train %>% filter(Id %in% valid_ids) %>%
+```{r aggregate_expected, cache = TRUE}
+rain_1perhr <- rain %>%
   group_by(Id) %>% 
-  summarise(Ref_spline_natural = sum(spline(x = minutes_past,
-                                            y = Ref, xout = 0:60,
-                                            method = 'natural')$y)/60)
-sfit_pred_natural <-  (10^(Ref_spline_natural$Ref_spline_natural/10)/200)^(5/8)
-sfit_pred_natural[sfit_pred_natural > 150] <- 150
-mae(train_1perhr$Expected[!is.na (train_1perhr$Ref_mean)], 
-    sfit_pred_natural)
-## Local score: 24.727.  Maybe not worth submitting.  That method isn't so great.
-
-## Realized after looking at 4th posting on this page:
-##  https://www.kaggle.com/c/how-much-did-it-rain-ii/forums/t/16572/38-missing-data/
-## that I need to first convert Ref column to rain rate.  Maybe then I can find 
-## area under the curve and go from there.
-
-# Remove those dfs to reclaim space
-rm(Ref_spline); rm(Ref_spline_natural); rm(mp_pred); rm(mp_pred_test);
-rm(sfit_pred_natural); rm(sfit_pred); rm(valid_ids)
-
-# Calculate instantaneous rain rate (mm/hr):
-train$Ref_irr <- (10^(train$Ref/10)/200)^(5/8)
-## all the NAs should be 0 now, for 0 instant rain rate.
-train$Ref_irr[is.na (train$Ref_irr)] <- 0
-summary(train$Ref_irr)
-# Now do the auc calc, with a 0 anchor just before 0 and after 60
-system.time(train_Ref_irr_auc <- train %>% group_by(Id) %>%
-              summarise(n_obs = n(), 
-                        Est_rain_linear = auc(x = c(-0.001, minutes_past, 60.001),
-                                              y = c(0, Ref_irr, 0), type = 'linear')/60#,
-                        #Est_rain_spline = auc(x = c(-0.001, minutes_past, 60.001),
-                        #               y = c(0, Ref_irr, 0), type = 'spline')/60
-              )
-)
-train_Ref_irr_auc$Est_rain_spline[train_Ref_irr_auc$Est_rain_spline < 0] <- 0
-## only problem is that for the 1-observation hours we're getting NA,
-##  so added anchors on either side of 0 and 60.
-scorerows <- !is.na (train_1perhr$Ref_mean)
-mae(train_1perhr$Expected[scorerows], 
-    train_Ref_irr_auc$Est_rain_linear[scorerows])
-# Calc MAE: 23.3873.  Slightly lower than my "mean" method, but same area.
-mae(train_1perhr$Expected[scorerows], 
-    train_Ref_irr_auc$Est_rain_spline[scorerows])
-# Spline calc MAE: 36.883.  This gets pretty unbounded, so going to use 'linear' 
-#  from here on out.
-
-# That MAE of 23.3873 is close to that for my "mean" calculation. Not going to 
-#  submit to Kaggle at this time.  
-# But, want to do some modeling with all the Ref values and the km from gauge.
-#  Maybe can start to get better results with that. 
-
-# Want a function with the MP transformation
-mp_transform <- function(Ref_vect) {
-  (10^(Ref_vect/10)/200)^(5/8)
-}
-
-train_transf <- as.data.frame(lapply(train[,5:11], function(x) { mp_transform(x) }))
-names(train_transf) <- paste0(names(train_transf), '_irr')
-summary(train_transf)
-train_transf <- as.data.frame(lapply(train_transf, function(x) {
-  x[is.na (x)] <- 0
-  x
-}))
-train_transf <- bind_cols(train[c('Id', 'minutes_past', 'radardist_km', 'Ref_irr')],
-                          train_transf, train[c('Expected')])
-# Now do AUC for each column. 
-train_allref_auc <- train_transf %>% group_by(Id) %>%
-  summarise(n_obs = n(), radardist_km = first(radardist_km), 
-            Ref_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                          y = c(0, Ref_irr, 0), type = 'linear')/60,
-            Ref_5x5_10th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, Ref_5x5_10th_irr, 0), type = 'linear')/60,
-            Ref_5x5_50th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, Ref_5x5_50th_irr, 0), type = 'linear')/60,
-            Ref_5x5_90th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, Ref_5x5_90th_irr, 0), type = 'linear')/60,
-            RefComposite_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, RefComposite_irr, 0), type = 'linear')/60,
-            RefComposite_5x5_10th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                            y = c(0, RefComposite_5x5_10th_irr, 0), 
-                                            type = 'linear')/60,
-            RefComposite_5x5_50th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                            y = c(0, RefComposite_5x5_50th_irr, 0), 
-                                            type = 'linear')/60,
-            RefComposite_5x5_90th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                            y = c(0, RefComposite_5x5_90th_irr, 0), 
-                                            type = 'linear')/60
-  )
-
-
-# Need to know which Ids are all-NA Ref (don't train or score on these)
-# Need to know which Ids have Expected > 250 (too high of readings)
-allrefna_train <- train_1perhr$Id[is.na (train_1perhr$Ref_mean)]
-highExpected_train <- train_1perhr$Id[train_1perhr$Expected > 250]
-
-# Modeling (remember to filter out Expected above 200 when training), and filter
-#  out the Ids with all NA Ref values when training.
-
-
-run_mods <- function(data, allrefna, highExpected, fol, mod = 'rpart', k = 10) {
-  print(paste(Sys.time(), ': Entering run_mods function'))
-  folds <- createFolds(data$Expected, k = k)
-  i <- 0
-  accuracies <- lapply(folds, function(fold) {
-    i <<- i + 1
-    train <- data[-fold, ]
-    print(paste('Fold: ', i))
-    #print(paste('nrow(train):', nrow(train)))
-    train_filt <- train %>% filter(!(Id %in% allrefna)) %>% 
-      filter(!(Id %in% highExpected))
-    #print(paste('nrow(train_filt):', nrow(train_filt)))
-    test <- data[fold, ]
-    if(mod == 'rpart') {
-      cart <- rpart(fol, data = train_filt)
-      pred <- predict(cart, newdata = test)
-      
-    } else if(mod == 'rf') {
-      rf <- randomForest(fol, data = train_filt)
-      print(importance(rf))
-      pred <- predict(rf, newdata = test)
-    } else if(mod == 'gbm') {
-      gbm_mod <- gbm(formula = fol, data = train_filt, n.trees = 250, 
-                     interaction.depth = 3, verbose = TRUE, distribution = 'laplace')
-      print(summary(gbm_mod))
-      pred <- predict(gbm_mod, newdata = test, n.trees = 250)
-    }
-    pred_df <- data.frame(Id = test$Id, pred = pred)
-    #print(paste('nrow(pred_df)', nrow(pred_df)))
-    
-    pred_df$Expected <- test$Expected
-    print("Prediction summary:")
-    print(summary(pred_df))
-    pred_df <- pred_df %>% filter(!(Id %in% allrefna))
-    print(summary(pred_df))
-    #print(paste('nrow(pred_df) after filter', nrow(pred_df)))
-    mae_score <- mae(pred_df$Expected, pred_df$pred)
-    print(paste(Sys.time(), ': MAE #',i,':', mae_score))
-    mae_score
-    #list(gbm_mod, train, train_filt, test, pred_df)
-  })
-  print(paste('Average MAE with 10-fold cv:', 
-              sum(unlist(accuracies))/k))
-  accuracies
-}
-
-
-train_allref_auc$Expected <- train_1perhr$Expected
-
-fol <- Expected ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_auc +
-  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc +
-  RefComposite_5x5_90th_auc
-
-rparts <- 
-  run_mods(train_allref_auc, allrefna_train,
-           highExpected_train, fol, mod = 'rpart', k = 10)
-#[1] "Average MAE with 10-fold cv: 24.6999164195204"
-
-# Try a randomForest
-library(randomForest)
-#run_mods(train_allref_auc, allrefna_train, highExpected_train, fol, mod = 'rf')
-# random forest was taking HOURS to run just a few trees.  So trying something else.
-
-fol_gbm <- fol <- Expected ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + 
-  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc 
-gbm_maes <- run_mods(train_allref_auc, allrefna_train, highExpected_train, fol_gbm,
-                     mod = 'gbm', k = 10)
-#  "Average MAE with 5-fold cv: 24.8861770452619" with
-#   fol <- Expected ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
-#  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_auc +
-#  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc +
-#  RefComposite_5x5_90th_auc
-#  Need to inspect closer to see if I'm doing it right.
-
-# Figured it out -- was using "gaussian" distribution.
-#  Changed to Laplace distribution and...
-#    Average MAE with 5-fold cv: 23.4393403784286" (fol_gbm)
-#  "Average MAE with 10-fold cv: 23.440215205844" (fol)
-#  "Average MAE with 10-fold cv: 23.4410088231101"
-
-## Decent-looking scores there for GBM, but I'm not ready to submit to Kaggle yet.
-
-# Noticed that it's only predicted expected between 0.9 and 1.6.  Maybe if I take
-#  the log of the Expected.  Then I can reverse it later....
-
-# Create a new function with this change.
-run_mods_Exp_log <- function(data, allrefna, highExpected, fol, mod = 'rpart', k = 10) {
-  print(paste(Sys.time(), ': Entering run_mods function'))
-  folds <- createFolds(data$Expected, k = k)
-  i <- 0
-  # Take log of Expected
-  data$Expected <- log(data$Expected + 1)
-  accuracies <- lapply(folds, function(fold) {
-    i <<- i + 1
-    train <- data[-fold, ]
-    print(paste('Fold: ', i))
-    #print(paste('nrow(train):', nrow(train)))
-    train_filt <- train %>% filter(!(Id %in% allrefna)) %>% 
-      filter(!(Id %in% highExpected))
-    #print(paste('nrow(train_filt):', nrow(train_filt)))
-    test <- data[fold, ]
-    if(mod == 'rpart') {
-      cart <- rpart(fol, data = train_filt)
-      pred <- predict(cart, newdata = test)
-    } else if(mod == 'rf') {
-      rf <- randomForest(fol, data = train_filt)
-      print(importance(rf))
-      pred <- predict(rf, newdata = test)
-    } else if(mod == 'gbm') {
-      gbm_mod <- gbm(formula = fol, data = train_filt, n.trees = 250, 
-                     interaction.depth = 3, verbose = TRUE, distribution = 'gaussian')
-      print(summary(gbm_mod))
-      pred <- predict(gbm_mod, newdata = test, n.trees = 250)
-    }
-    pred <- exp(pred) - 1 # un-do the log of Expected
-    pred_df <- data.frame(Id = test$Id, pred = pred)
-    #print(paste('nrow(pred_df)', nrow(pred_df)))
-    
-    pred_df$Expected <- exp(test$Expected) - 1  # undo the log of expected
-    print("Prediction summary:")
-    print(summary(pred_df))
-    pred_df <- pred_df %>% filter(!(Id %in% allrefna))
-    print(summary(pred_df))
-    #print(paste('nrow(pred_df) after filter', nrow(pred_df)))
-    mae_score <- mae(pred_df$Expected, pred_df$pred)
-    print(paste(Sys.time(), ': MAE #',i,':', mae_score))
-    mae_score
-    #list(gbm_mod, train, train_filt, test, pred_df)
-  })
-  print(paste('Average MAE with',k,'-fold cv:', 
-              sum(unlist(accuracies))/k))
-  accuracies
-}
-
-rparts_exp <- 
-  run_mods_Exp_log(train_allref_auc, allrefna_train,
-                   highExpected_train, fol, mod = 'rpart', k = 10)
-#[1] "Average MAE with 10 -fold cv: 23.3009274403245"
-# This is better than my previous best score! So will have to 
-#  use this model and submit to Kaggle.
-
-gbm_maes <- run_mods_Exp_log(train_allref_auc, allrefna_train, highExpected_train, fol_gbm,
-                             mod = 'gbm', k = 5)
-## With fol_gbm formula and laplace distribution:
-# "Average MAE with 5 -fold cv: 23.4607803413511"
-#  "Average MAE with 5 -fold cv: 23.5136031945773"
-
-
-
-## As of turning in part 2 on 11/30/15, I'm still doing some modeling.  I haven't chosen a 
-##  final model yet, and I'd still like to get in some of the other variables. But I'm 
-## seeig some promising results with the rpart model and taking the log of the 
-## Expected values.  Will report on my modeling status for the final part of the project.
-
-# An aside -- what is the best possible score I can expect if all readings under
-#  250 are spot on?
-pred_best <- train$Expected
-median_under250 <- median((train %>% filter(Expected < 250))$Expected)
-pred_best <- ifelse(pred_best < 250, pred_best, median_under250)
-mae(pred = pred_best[!(allrefna_train)], actual = train$Expected[!(allrefna_train)])
-# MAE 17.62678 -- best possible!
-
-# Ok, back on track.  I like what I saw from the rpart.
-#  Need a test set formatted just like the training set.
-
-
-test_transf <- as.data.frame(lapply(test[,4:11], function(x) { mp_transform(x) }))
-names(test_transf) <- paste0(names(test_transf), '_irr')
-summary(test_transf)
-test_transf <- as.data.frame(lapply(test_transf, function(x) {
-  x[is.na (x)] <- 0
-  x
-}))
-test_transf <- bind_cols(test[c('Id', 'minutes_past', 'radardist_km')],
-                         test_transf)
-# Now do AUC for each column. 
-test_allref_auc <- test_transf %>% group_by(Id) %>%
-  summarise(n_obs = n(), radardist_km = first(radardist_km), 
-            Ref_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                          y = c(0, Ref_irr, 0), type = 'linear')/60,
-            Ref_5x5_10th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, Ref_5x5_10th_irr, 0), type = 'linear')/60,
-            Ref_5x5_50th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, Ref_5x5_50th_irr, 0), type = 'linear')/60,
-            Ref_5x5_90th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, Ref_5x5_90th_irr, 0), type = 'linear')/60,
-            RefComposite_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                   y = c(0, RefComposite_irr, 0), type = 'linear')/60,
-            RefComposite_5x5_10th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                            y = c(0, RefComposite_5x5_10th_irr, 0), 
-                                            type = 'linear')/60,
-            RefComposite_5x5_50th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                            y = c(0, RefComposite_5x5_50th_irr, 0), 
-                                            type = 'linear')/60,
-            RefComposite_5x5_90th_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                                            y = c(0, RefComposite_5x5_90th_irr, 0), 
-                                            type = 'linear')/60
-  )
-
-allrefna_test <- test_1perhr$Id[is.na (train_1perhr$Ref_mean)]
-
-train_allref_auc$Expected_log <- log(train_allref_auc$Expected + 1)
-train_allref_auc_filtered <- train_allref_auc %>% filter(!(Id %in% allrefna_train)) %>% 
-  filter(!(Id %in% highExpected_train))
-fol_expectedlog = Expected_log ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_5x5_10th_auc +
-  RefComposite_5x5_50th_auc
-
-cart <- rpart(fol_expectedlog, data = train_allref_auc_filtered)
-summary(cart)
-pred_cart <- predict(cart, newdata = test_allref_auc)
-pred_cart <- exp(pred_cart) - 1
-summary(pred_cart)
-# Kaggle score: 23.93418 -- moved up a few spots.
-
-# Had a thought -- maybe if we include a km^2 factor it will work even
-#  better -- distance-squared is an important thing to know in "intensity" calculations.
-
-fol <- Expected ~ radardist_km + Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_auc +
-  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc +
-  RefComposite_5x5_90th_auc
-rparts_exp <- 
-  run_mods_Exp_log(train_allref_auc, allrefna_train,
-                   highExpected_train, fol, mod = 'rpart', k = 10)
-# with additional terms in fol:
-#  [1] "Average MAE with 10 -fold cv: 23.3026793313298" 
-
-train_allref_auc$radardist_km_sq <- (train_allref_auc$radardist_km)^2
-fol_kmsq <- fol <- Expected ~ radardist_km + radardist_km_sq +
-  Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_auc +
-  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc +
-  RefComposite_5x5_90th_auc
-rparts_exp_kmsq <- 
-  run_mods_Exp_log(train_allref_auc, allrefna_train,
-                   highExpected_train, fol_kmsq, mod = 'rpart', k = 10)
-# [1] "Average MAE with 10 -fold cv: 23.3034193790669"
-#  ^ did not help -- score basically same.
-
-
-#Now going to do the auc calculations for RhoHV, Zdr and Kdp.
-
-
-train_auc2 <- train %>% group_by(Id) %>%
-  summarise(RhoHV_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                            y = c(0, RhoHV, 0), type = 'linear')/60.002,
-            Zdr_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                          y = c(0, Zdr, 0), type = 'linear')/60,
-            Kdp_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                          y = c(0, Kdp, 0), type = 'linear')/60)
-
-# add above to the other train auc
-train_allref_auc <- train_allref_auc %>% bind_cols(train_auc2)
-# forgot to disinclude Id column from train_auc
-train_allref_auc <- train_allref_auc[,c(1:14,16:18)]
-
-# Ok now do another CART model:
-train_allref_auc$radardist_km_sq_inv <- 1/(train_allref_auc$radardist_km_sq)
-fol_thruKdp <- Expected ~ radardist_km + radardist_km_sq_inv +
-  Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_auc +
-  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc +
-  RefComposite_5x5_90th_auc + RhoHV_auc + Zdr_auc + Kdp_auc
-rparts_thruKdp <- 
-  run_mods_Exp_log(train_allref_auc, allrefna_train,
-                   highExpected_train, fol_thruKdp, mod = 'rpart', k = 10)
-# [1] "Average MAE with 10 -fold cv: 23.3018106358255" radardist_km_sq
-# basically same score
-# [1] "Average MAE with 10 -fold cv: 23.2984152198045"  maybe slight better
-#  but not enough to resubmit to kaggle I think
-
-
-## GBM with a training grid --
-gbm_n.trees <- c(100, 250, 500)
-gbm_interaction.depth <- c(1, 2, 3, 4)
-gbm_shrinkage <- c(0.001, 0.01, 0.05, 0.1)
-gbm_grid <- expand.grid(gbm_n.trees, gbm_interaction.depth, gbm_shrinkage)
-gbm_grid
-# There are 48 to do.  this will take a long time to train.
-names(gbm_grid) <- c('n.trees', 'interaction.depth', 'shrinkage')
-gbm_grid$MAE <- NA
-
-# Now need a 10-fold CV function
-run_mods_gbm_grid <- function(data, allrefna, highExpected, fol, k = 10,
-                              n.trees, interaction.depth, shrinkage) {
-  print(paste(Sys.time(), ': Entering run_mods function'))
-  folds <- createFolds(data$Expected, k = k)
-  i <- 0
-  # Take log of Expected
-  data$Expected <- log(data$Expected + 1)
-  accuracies <- lapply(folds, function(fold) {
-    i <<- i + 1
-    train <- data[-fold, ]
-    print(paste('Fold: ', i))
-    #print(paste('nrow(train):', nrow(train)))
-    train_filt <- train %>% filter(!(Id %in% allrefna)) %>% 
-      filter(!(Id %in% highExpected))
-    #print(paste('nrow(train_filt):', nrow(train_filt)))
-    test <- data[fold, ]
-    gbm_mod <- gbm(formula = fol, data = train_filt, n.trees = n.trees, 
-                   interaction.depth = interaction.depth,
-                   shrinkage = shrinkage, verbose = TRUE, distribution = 'gaussian')
-    print(summary(gbm_mod))
-    pred <- predict(gbm_mod, newdata = test, n.trees = n.trees)
-    pred <- exp(pred) - 1 # un-do the log of Expected
-    pred_df <- data.frame(Id = test$Id, pred = pred)
-    #print(paste('nrow(pred_df)', nrow(pred_df)))
-    
-    pred_df$Expected <- exp(test$Expected) - 1  # undo the log of expected
-    print("Prediction summary:")
-    print(summary(pred_df))
-    pred_df <- pred_df %>% filter(!(Id %in% allrefna))
-    print(summary(pred_df))
-    #print(paste('nrow(pred_df) after filter', nrow(pred_df)))
-    mae_score <- mae(pred_df$Expected, pred_df$pred)
-    print(paste(Sys.time(), ': MAE #',i,':', mae_score))
-    mae_score
-    #list(gbm_mod, train, train_filt, test, pred_df)
-  })
-  print(paste('Average MAE with',k,'-fold cv:', 
-              sum(unlist(accuracies))/k))
-  sum(unlist(accuracies))/k
-}
-
-for(i in 1:nrow(gbm_grid)) {
-  gbm_grid$MAE[i] <- run_mods_gbm_grid(train_allref_auc, allrefna_train,
-                                       highExpected_train, fol_thruKdp, 
-                                       interaction.depth = gbm_grid$interaction.depth[i],
-                                       shrinkage = gbm_grid$shrinkage[i],
-                                       n.trees = gbm_grid$n.trees[i], k = 10)
-  print(gbm_grid)
-}
-
-# Make the test set look like the train set:
-
-test_allref_auc$radardist_km_sq_inv <- 1/(test_allref_auc$radardist_km)^2
-test_auc2 <- test %>% group_by(Id) %>%
-  summarise(RhoHV_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                            y = c(0, RhoHV, 0), type = 'linear')/60.002,
-            Zdr_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                          y = c(0, Zdr, 0), type = 'linear')/60,
-            Kdp_auc = auc(x = c(-0.001, minutes_past, 60.001),
-                          y = c(0, Kdp, 0), type = 'linear')/60)
-
-# add above to the other test auc
-test_allref_auc <- test_allref_auc %>% bind_cols(test_auc2)
-test_allref_auc <- test_allref_auc[,c(1:12,14:16)]
-
-fol_thruKdp_gbm <- fol <- Expected_log ~ radardist_km + radardist_km_sq_inv +
-  Ref_auc + Ref_5x5_10th_auc + 
-  Ref_5x5_50th_auc + Ref_5x5_90th_auc + RefComposite_auc +
-  RefComposite_5x5_10th_auc + RefComposite_5x5_50th_auc +
-  RefComposite_5x5_90th_auc + RhoHV_auc + Zdr_auc + Kdp_auc
-gbm_mod_500_4_0.01 <- gbm(formula = fol_thruKdp_gbm, data = train_allref_auc, 
-                              n.trees = 500, 
-                              interaction.depth = 4,
-                              shrinkage = 0.01, verbose = TRUE,
-                              distribution = 'gaussian')
-
-pred_gbm_500_4_0.01 <- predict(gbm_mod_500_4_0.01, newdata = test_allref_auc,
-                               n.trees = 500)
-pred_gbm_500_4_0.01 <- exp(pred_gbm_500_4_0.01) - 1
-summary(pred_gbm_500_4_0.01)
-write_output(unique(test$Id), pred_gbm_500_4_0.01)
-# Kaggle score: 23.93359  -- no real improvement in leaderboard
-
-#Another model based on CV:
-gbm_mod_500_4_0.05 <- gbm(formula = fol_thruKdp_gbm, data = train_allref_auc, 
-                          n.trees = 500, 
-                          interaction.depth = 4,
-                          shrinkage = 0.05, verbose = TRUE,
-                          distribution = 'gaussian')
-
-pred_gbm_500_4_0.05 <- predict(gbm_mod_500_4_0.05, newdata = test_allref_auc,
-                               n.trees = 500)
-pred_gbm_500_4_0.05 <- exp(pred_gbm_500_4_0.05) - 1
-summary(pred_gbm_500_4_0.05)
-# wow, a bunch of predictions were below 0
-pred_gbm_500_4_0.05[pred_gbm_500_4_0.05 < 0] <- 0
-write_output(unique(test$Id), pred_gbm_500_4_0.05)
-saveRDS(gbm_mod_500_4_0.05, 'gbm_mod_500_4_0.05.rds')
+  summarise(Expected = first(Expected), Expected_avg = mean(Expected), n = n())
 ```
 
-## Appendix B -- CART Model Summary
+How many of the `Expected` values were different than the mean `Expected` per `Id` chunk?  
 
-```{r summary_cart}
-summary(mycart)
+```{r exploring_expected, cache=TRUE}
+sum(rain_1perhr$Expected != rain_1perhr$Expected_avg)
 ```
 
+The sum is zero, so they were all the same, so there are no abnormalities with that data.
+
+How many radar observations in a given hour are we seeing?  By table:
+
+```{r table_observed_per_hr}
+table(rain_1perhr$n)
+```
+
+This is interesting -- there may be different ways of handling the 1-observation hour versus the 19-observation hours.  Maybe by level of certainty/uncertainty.  Not sure, will have to think about this.
+
+Now plot the Expected.
+
+```{r plot_expected_histogram, cache=TRUE}
+qplot(rain_1perhr$Expected)
+ggplot(rain_1perhr, aes(x = Id, y = Expected)) + geom_point()
+```
+
+That plot is extremely difficult to see.  I susupect there is a lot of bad data in this data set.  Let's zoom in a bit:
+
+```{r expected_zoom_in, cache=TRUE}
+ggplot(rain_1perhr %>% filter(Id < 10000), aes(x = Id, y = Expected)) + geom_point(alpha = 0.1) +
+  scale_y_continuous(limits  = c(0, 2000))
+```
+
+In fact, according to the Weather Channel, the highest 1-hour rainfall total in the USA, ever, was 13.8 inches in an hour (http://www.weather.com/holiday/spring/news/extreme-rainfall-records-united-states-20130313#/4).  This equates to 350 mm.  So, we can probably throw out rainfall values above 350mm, and consider them to be bad gauge data.
+
+```{r expected_zoom_in_under350, cache = TRUE}
+ggplot(rain_1perhr %>% filter(Id < 10000), aes(x = Id, y = Expected)) + geom_point(alpha = 0.1) + scale_y_continuous(limits  = c(0, 350))
+ggplot(rain_1perhr %>% filter(Expected < 350), aes(x = Expected)) + geom_histogram()
+ggplot(rain_1perhr %>% filter(Expected < 350), aes(x = Expected)) + geom_histogram() +
+  scale_x_log10()
+```
+
+When filtering to allow no values of `Expected` greater than 350, the scatterplot reveals, unsurprisingly, a skew-right pattern.  The second histogram above is a log-10 scale, which is closer to a normal type of distribution.  So, one way that we might be more successful at solving this problem is to treat expected as a log and then re-scale it for the final answer.  
+
+Just curious, how many values to we "screen out" when we filter to reasonable rain values?  Beyond screening out completely ridiculous values, it's hard to screen out bad values that lie within a reasonable range.
+
+```{r how_many_rows}
+nrow(rain_1perhr %>% filter(Expected < 350))
+nrow(rain_1perhr %>% filter(Expected < 350))/nrow(rain_1perhr)
+```
+
+So, at this leaves us with about 93.8% of our original data.
+
+###  Looking at Individual Variables
+
+Now I will, tediously, look at histograms for the remaining variables, to see if they look reasonable and maybe if we should think about applying transformations to the data when doing our predictions.
+
+First, need to filter out the "bad" rain gauge values.
+
+```{r filter_rain_lessthan350}
+rain_filtered <- rain %>% filter(Expected < 350)
+```
+
+Now, histograms for each variable remaining.  Mainly looking for outliers and distribution shapes.  Comments about the distribution shapes are included in-line.
+
+```{r hisograms, cache=TRUE, warning=FALSE}
+qplot(rain_filtered$radardist_km, binwidth = 1)  # normal-ish distribution, little skew left
+qplot(rain_filtered$Ref) # normal dist
+qplot(rain_filtered$Ref_5x5_10th) # normal dist
+qplot(rain_filtered$Ref_5x5_50th) # normal dist
+qplot(rain_filtered$Ref_5x5_90th) # normal dist
+qplot(rain_filtered$RefComposite) # normal dist
+qplot(rain_filtered$RefComposite_5x5_10th) # normal dist
+qplot(rain_filtered$RefComposite_5x5_50th) # normal dist
+qplot(rain_filtered$RefComposite_5x5_90th) # normal dist
+qplot(rain_filtered$RhoHV)  # very skew-left distribution
+qplot(rain_filtered$RhoHV_5x5_10th) # very skew-left distribution
+qplot(rain_filtered$RhoHV_5x5_50th) # very skew-left distribution
+qplot(rain_filtered$RhoHV_5x5_90th) # very very skew-left distribution
+qplot(rain_filtered$Zdr) # normal distr
+qplot(rain_filtered$Zdr_5x5_10th) # pretty normal dist, a bit skew-left
+qplot(rain_filtered$Zdr_5x5_50th)  # narrow normal distr
+qplot(rain_filtered$Zdr_5x5_90th)  # interesting right-end spike -- maybe bad values??
+qplot(rain_filtered$Kdp)  # very narrow distribution with long tails
+qplot(rain_filtered$Kdp_5x5_10th)  # left-skew distribution
+qplot(rain_filtered$Kdp_5x5_50th)  # left-skew, but narrow "center"
+qplot(rain_filtered$Kdp_5x5_90th)  # quite narrow dist, some very high/low values at either end though
+```
+
+So for the most part these distributions look normal and/or have some sort of skew to them.  I don't think I'll need to do a lot with these data, but with the skewed variables it might be good to do log-scale transformations.  I'll also need to think about interactions between variables. 
